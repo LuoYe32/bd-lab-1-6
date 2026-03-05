@@ -1,40 +1,35 @@
-import configparser
-import os
-import unittest
-import pandas as pd
-import sys
+from pathlib import Path
+import numpy as np
 
-sys.path.insert(1, os.path.join(os.getcwd(), "src"))
-
-from train import MultiModel
-
-config = configparser.ConfigParser()
-config.read("config.ini")
+from ..train import main as train_main
 
 
-class TestMultiModel(unittest.TestCase):
+def test_train_saves_model_and_metrics(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
 
-    def setUp(self) -> None:
-        self.multi_model = MultiModel()
+    Path("data/processed").mkdir(parents=True, exist_ok=True)
+    Path("artifacts").mkdir(parents=True, exist_ok=True)
 
-    def test_log_reg(self):
-        self.assertEqual(self.multi_model.log_reg(), True)
+    X = np.random.random((20, 784)).astype("float32")
+    y = np.array([i % 10 for i in range(20)], dtype="int64")
+    np.savez_compressed("data/processed/train.npz", X=X, y=y)
+    np.savez_compressed("data/processed/val.npz", X=X, y=y)
 
-    def test_rand_forest(self):
-        self.assertEqual(self.multi_model.rand_forest(use_config=False), True)
+    Path("config.ini").write_text(
+        """
+            [LOGREG]
+            C = 1.0
+            max_iter = 200
+            n_jobs = -1
+            
+            [ARTIFACTS]
+            model_path = artifacts/model.joblib
+            metrics_path = artifacts/metrics.json
+        """.strip(),
+        encoding="utf-8",
+    )
 
-    def test_knn(self):
-        self.assertEqual(self.multi_model.knn(use_config=False), True)
+    train_main("config.ini")
 
-    def test_svm(self):
-        self.assertEqual(self.multi_model.svm(use_config=False), True)
-
-    def test_gnb(self):
-        self.assertEqual(self.multi_model.gnb(), True)
-
-    def test_d_tree(self):
-        self.assertEqual(self.multi_model.d_tree(use_config=False), True)
-
-
-if __name__ == "__main__":
-    unittest.main()
+    assert Path("artifacts/model.joblib").exists()
+    assert Path("artifacts/metrics.json").exists()

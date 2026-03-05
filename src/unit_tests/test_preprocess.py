@@ -1,32 +1,40 @@
-import configparser
-import os
-import unittest
-import pandas as pd
-import sys
+from pathlib import Path
+import numpy as np
 
-sys.path.insert(1, os.path.join(os.getcwd(), "src"))
-
-from preprocess import DataMaker
-
-config = configparser.ConfigParser()
-config.read("config.ini")
+from ..preprocess import main as preprocess_main
 
 
-class TestDataMaker(unittest.TestCase):
+def test_preprocess_outputs_exist(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
 
-    def setUp(self) -> None:
-        self.data_maker = DataMaker()
+    raw_dir = Path("data/raw")
+    raw_dir.mkdir(parents=True, exist_ok=True)
 
-    def test_get_data(self):
-        self.assertEqual(self.data_maker.get_data(), True)
+    header = "label," + ",".join([f"pixel{i}" for i in range(784)]) + "\n"
+    row0 = "0," + ",".join(["0"] * 784) + "\n"
+    row1 = "1," + ",".join(["255"] * 784) + "\n"
 
-    def test_split_data(self):
-        self.assertEqual(self.data_maker.split_data(), True)
+    (raw_dir / "fashion-mnist_train.csv").write_text(header + row0 + row1, encoding="utf-8")
+    (raw_dir / "fashion-mnist_test.csv").write_text(header + row0 + row1, encoding="utf-8")
 
-    def test_save_splitted_data(self):
-        self.assertEqual(self.data_maker.save_splitted_data(pd.read_csv(
-            config["DATA"]["x_data"], index_col=0), config["DATA"]["x_data"]), True)
+    Path("config.ini").write_text(
+        """
+            [DATA]
+            raw_train = data/raw/fashion-mnist_train.csv
+            raw_test  = data/raw/fashion-mnist_test.csv
+            [PREPROCESS]
+            val_size = 0.5
+            random_state = 42
+            normalize = true
+        """.strip(),
+        encoding="utf-8",
+    )
 
+    preprocess_main("config.ini")
 
-if __name__ == "__main__":
-    unittest.main()
+    assert Path("data/processed/train.npz").exists()
+    assert Path("data/processed/val.npz").exists()
+    assert Path("data/processed/test.npz").exists()
+
+    tr = np.load("data/processed/train.npz")
+    assert tr["X"].shape[1] == 784
