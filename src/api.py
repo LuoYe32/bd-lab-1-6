@@ -3,8 +3,10 @@ from typing import List, Optional
 
 import joblib
 import numpy as np
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, UploadFile, File
 from pydantic import BaseModel, Field
+from PIL import Image
+import io
 
 MODEL_PATH = Path("artifacts/model.joblib")
 
@@ -23,9 +25,18 @@ CLASS_NAMES = {
 
 
 class PredictRequest(BaseModel):
-    pixels: Optional[List[float]] = Field(default=None, description="Length 784, values in [0..1] or [0..255]")
-    fill: Optional[float] = Field(default=None, description="Fill all 784 pixels with this value")
-    random_seed: Optional[int] = Field(default=None, description="Generate deterministic random pixels")
+    pixels: Optional[List[float]] = Field(
+        default=None,
+        description="Length 784 array"
+    )
+    fill: Optional[float] = Field(
+        default=None,
+        description="Fill all pixels with one value"
+    )
+    random_seed: Optional[int] = Field(
+        default=None,
+        description="Generate deterministic random pixels"
+    )
 
 
 class PredictResponse(BaseModel):
@@ -49,6 +60,30 @@ def _load_model():
     return _model
 
 
+def _predict_array(x: np.ndarray):
+
+    model = _load_model()
+
+    if x.max() > 1.5:
+        x = x / 255.0
+
+    X = x.reshape(1, -1)
+
+    if hasattr(model, "predict_proba"):
+        proba = model.predict_proba(X)[0]
+        class_id = int(np.argmax(proba))
+    else:
+        class_id = int(model.predict(X)[0])
+        proba = np.zeros(10)
+        proba[class_id] = 1.0
+
+    return {
+        "class_id": class_id,
+        "class_name": CLASS_NAMES.get(class_id, str(class_id)),
+        "proba": [float(p) for p in proba],
+    }
+
+
 @app.get("/health")
 def health():
     ok = MODEL_PATH.exists()
@@ -57,35 +92,53 @@ def health():
 
 @app.post("/predict", response_model=PredictResponse)
 def predict(req: PredictRequest):
-    model = _load_model()
 
     if req.pixels is not None:
+
         if len(req.pixels) != 784:
             raise HTTPException(status_code=400, detail="pixels must have length 784")
+
         x = np.array(req.pixels, dtype=np.float32)
+
     elif req.fill is not None:
+
         x = np.full((784,), float(req.fill), dtype=np.float32)
+
     elif req.random_seed is not None:
+
         rng = np.random.default_rng(int(req.random_seed))
-        x = rng.random(784, dtype=np.float32)
+        x = rng.random(784)
+
     else:
-        raise HTTPException(status_code=400, detail="Provide pixels OR fill OR random_seed")
+        raise HTTPException(
+            status_code=400,
+            detail="Provide pixels OR fill OR random_seed"
+        )
 
-    if x.max() > 1.5:
-        x = x / 255.0
+    return _predict_array(x)
 
-    X = x.reshape(1, -1)
 
-    if hasattr(model, "predict_proba"):
-        proba = model.predict_proba(X)[0].tolist()
-        class_id = int(np.argmax(proba))
-    else:
-        class_id = int(model.predict(X)[0])
-        proba = [0.0] * 10
-        proba[class_id] = 1.0
+@app.post("/predict/image", response_model=PredictResponse)
+async def predict_image(file: UploadFile = File(...)):
 
-    return {
-        "class_id": class_id,
-        "class_name": CLASS_NAMES.get(class_id, str(class_id)),
-        "proba": [float(p) for p in proba],
-    }
+    contents = await file.read()
+
+    try:
+        image = Image.open(io.BytesIO(contents)).convert("L")
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid image")
+
+    image = image.resize((28, 28))
+
+    arr = np.array(image).astype(np.float32)
+    arr = arr.flatten()
+
+    return _predict_array(arr)
+
+
+@app.get("/predict/random", response_model=PredictResponse)
+def predict_random():
+
+    x = np.random.random(784)
+
+    return _predict_array(x)
