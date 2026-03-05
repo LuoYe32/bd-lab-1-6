@@ -22,11 +22,10 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Configure DVC remote (S3/MinIO)
+      - name: Configure DVC (DagsHub)
         run: |
-          dvc remote modify minio endpointurl "${{ secrets.DVC_S3_ENDPOINT }}"
-          dvc remote modify minio access_key_id "${{ secrets.DVC_S3_ACCESS_KEY }}"
-          dvc remote modify minio secret_access_key "${{ secrets.DVC_S3_SECRET_KEY }}"
+          dvc remote modify origin --local access_key_id "${{ secrets.DAGSHUB_ACCESS_KEY }}"
+          dvc remote modify origin --local secret_access_key "${{ secrets.DAGSHUB_SECRET_KEY }}"
 
       - name: DVC pull data & artifacts
         run: |
