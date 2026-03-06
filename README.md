@@ -41,6 +41,43 @@ https://www.kaggle.com/datasets/zalando-research/fashionmnist
 
 ---
 
+# DVC Remote Storage (DagsHub)
+
+Для хранения данных и артефактов модели используется **DVC remote storage**, размещенный на платформе **DagsHub**.
+
+DagsHub предоставляет S3-совместимое хранилище, которое позволяет:
+
+- хранить большие файлы (датасеты и модели) вне Git
+- версионировать данные вместе с кодом
+- воспроизводить ML pipeline
+- автоматически получать данные в CI/CD
+
+В данном проекте DagsHub используется как **удалённое хранилище для DVC**.
+
+### Использование DagsHub в CI
+
+В CI pipeline доступ к хранилищу DagsHub настраивается через секреты GitHub:
+
+```
+DAGSHUB_ACCESS_KEY
+DAGSHUB_SECRET_KEY
+```
+
+В pipeline выполняется настройка remote:
+
+```yaml
+dvc remote modify origin --local access_key_id ${{ secrets.DAGSHUB_ACCESS_KEY }}
+dvc remote modify origin --local secret_access_key ${{ secrets.DAGSHUB_SECRET_KEY }}
+```
+
+После этого pipeline может скачать данные:
+
+```
+dvc pull
+```
+
+---
+
 # CI/CD Pipeline
 
 CI pipeline выполняет:
