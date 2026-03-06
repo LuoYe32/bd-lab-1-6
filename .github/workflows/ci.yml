@@ -41,7 +41,7 @@ jobs:
 
       - name: Run tests
         run: |
-          pytest -q
+          pytest -q | tee test_output.txt
 
       - name: Login to DockerHub
         uses: docker/login-action@v3
@@ -61,13 +61,16 @@ jobs:
           echo "  name: ${{ secrets.DOCKERHUB_USERNAME }}/bd-lab-1-6" >> dev_sec_ops.yml
           echo "  tag: latest" >> dev_sec_ops.yml
           echo "" >> dev_sec_ops.yml
+
           echo "git:" >> dev_sec_ops.yml
           echo "  last_5_commits:" >> dev_sec_ops.yml
           git log -5 --pretty=format:"    - %H" >> dev_sec_ops.yml
           echo "" >> dev_sec_ops.yml
+
           echo "tests:" >> dev_sec_ops.yml
           echo "  framework: pytest" >> dev_sec_ops.yml
-          echo "  status: passed" >> dev_sec_ops.yml
+          echo "  result_summary:" >> dev_sec_ops.yml
+          tail -n 2 test_output.txt | sed 's/^/    /' >> dev_sec_ops.yml
 
       - name: Upload DevSecOps metadata
         uses: actions/upload-artifact@v4
