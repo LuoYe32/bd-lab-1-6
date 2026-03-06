@@ -52,3 +52,23 @@ jobs:
           IMAGE="${{ secrets.DOCKERHUB_USERNAME }}/bd-lab-1-6:latest"
           docker build -t "$IMAGE" .
           docker push "$IMAGE"
+
+      - name: Generate DevSecOps metadata
+        run: |
+          echo "docker_image:" > dev_sec_ops.yml
+          echo "  name: ${{ secrets.DOCKERHUB_USERNAME }}/bd-lab-1-6" >> dev_sec_ops.yml
+          echo "  tag: latest" >> dev_sec_ops.yml
+          echo "" >> dev_sec_ops.yml
+          echo "git:" >> dev_sec_ops.yml
+          echo "  last_5_commits:" >> dev_sec_ops.yml
+          git log -5 --pretty=format:"    - %H" >> dev_sec_ops.yml
+          echo "" >> dev_sec_ops.yml
+          echo "tests:" >> dev_sec_ops.yml
+          echo "  framework: pytest" >> dev_sec_ops.yml
+          echo "  status: passed" >> dev_sec_ops.yml
+
+      - name: Upload DevSecOps metadata
+        uses: actions/upload-artifact@v4
+        with:
+          name: devsecops-report
+          path: dev_sec_ops.yml
