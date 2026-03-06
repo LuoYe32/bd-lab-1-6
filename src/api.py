@@ -93,27 +93,97 @@ def health():
 @app.post("/predict", response_model=PredictResponse)
 def predict(req: PredictRequest):
 
+    provided = [
+        req.pixels is not None,
+        req.fill is not None,
+        req.random_seed is not None,
+    ]
+
+    if sum(provided) == 0:
+        raise HTTPException(
+            status_code=400,
+            detail="One of pixels, fill or random_seed must be provided"
+        )
+
+    if sum(provided) > 1:
+        raise HTTPException(
+            status_code=400,
+            detail="Only one of pixels, fill or random_seed can be provided"
+        )
+
     if req.pixels is not None:
 
-        if len(req.pixels) != 784:
-            raise HTTPException(status_code=400, detail="pixels must have length 784")
+        if not isinstance(req.pixels, list):
+            raise HTTPException(status_code=400, detail="pixels must be a list")
 
-        x = np.array(req.pixels, dtype=np.float32)
+        if len(req.pixels) != 784:
+            raise HTTPException(
+                status_code=400,
+                detail="pixels must contain exactly 784 values"
+            )
+
+        try:
+            x = np.array(req.pixels, dtype=np.float32)
+        except Exception:
+            raise HTTPException(
+                status_code=400,
+                detail="pixels must contain numeric values"
+            )
+
+        if not np.isfinite(x).all():
+            raise HTTPException(
+                status_code=400,
+                detail="pixels must not contain NaN or infinite values"
+            )
+
+        if x.min() < 0:
+            raise HTTPException(
+                status_code=400,
+                detail="pixels must be non-negative"
+            )
 
     elif req.fill is not None:
 
-        x = np.full((784,), float(req.fill), dtype=np.float32)
+        try:
+            fill_value = float(req.fill)
+        except Exception:
+            raise HTTPException(
+                status_code=400,
+                detail="fill must be numeric"
+            )
+
+        if not np.isfinite(fill_value):
+            raise HTTPException(
+                status_code=400,
+                detail="fill must be a finite number"
+            )
+
+        if fill_value < 0:
+            raise HTTPException(
+                status_code=400,
+                detail="fill must be non-negative"
+            )
+
+        x = np.full((784,), fill_value, dtype=np.float32)
 
     elif req.random_seed is not None:
 
-        rng = np.random.default_rng(int(req.random_seed))
-        x = rng.random(784)
+        try:
+            seed = int(req.random_seed)
+        except Exception:
+            raise HTTPException(
+                status_code=400,
+                detail="random_seed must be an integer"
+            )
 
-    else:
-        raise HTTPException(
-            status_code=400,
-            detail="Provide pixels OR fill OR random_seed"
-        )
+        if seed < 0:
+            raise HTTPException(
+                status_code=400,
+                detail="random_seed must be non-negative"
+            )
+
+        rng = np.random.default_rng(seed)
+        x = rng.random(784)
 
     return _predict_array(x)
 
@@ -121,24 +191,48 @@ def predict(req: PredictRequest):
 @app.post("/predict/image", response_model=PredictResponse)
 async def predict_image(file: UploadFile = File(...)):
 
+    if file.content_type not in {"image/png", "image/jpeg", "image/jpg", "image/bmp"}:
+        raise HTTPException(
+            status_code=400,
+            detail="Unsupported file type. Allowed: png, jpg, jpeg, bmp"
+        )
+
     contents = await file.read()
 
+    if len(contents) == 0:
+        raise HTTPException(status_code=400, detail="Empty file")
+
+    if len(contents) > 5 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="File too large")
+
     try:
-        image = Image.open(io.BytesIO(contents)).convert("L")
+        image = Image.open(io.BytesIO(contents))
+        image = image.convert("L")
     except Exception:
-        raise HTTPException(status_code=400, detail="Invalid image")
+        raise HTTPException(status_code=400, detail="Invalid image file")
+
+    if image.width > 4096 or image.height > 4096:
+        raise HTTPException(status_code=400, detail="Image resolution too large")
 
     image = image.resize((28, 28))
 
-    arr = np.array(image).astype(np.float32)
-    arr = arr.flatten()
+    arr = np.array(image, dtype=np.float32).flatten()
+
+    if not np.isfinite(arr).all():
+        raise HTTPException(status_code=400, detail="Invalid pixel values")
 
     return _predict_array(arr)
 
 
 @app.get("/predict/random", response_model=PredictResponse)
-def predict_random():
+def predict_random(seed: int | None = None):
 
-    x = np.random.random(784)
+    if seed is not None:
+        if seed < 0:
+            raise HTTPException(status_code=400, detail="seed must be non-negative")
+        rng = np.random.default_rng(seed)
+        x = rng.random(784)
+    else:
+        x = np.random.random(784)
 
     return _predict_array(x)
