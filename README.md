@@ -122,6 +122,8 @@ docker run -p 8000:8000 fashion-mnist-api
 docker-compose up --build
 ```
 
+---
+
 # Docker Image
 
 Docker образ публикуется в DockerHub:
